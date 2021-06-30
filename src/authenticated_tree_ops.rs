@@ -12,11 +12,11 @@ pub struct AuthenticatedTreeOpsBase {
     pub collect_changed_nodes: bool,
     pub changed_nodes_buffer: Vec<NodeId>,
     pub changed_nodes_buffer_to_check: Vec<NodeId>,
-    pub tree: AvlTree,
+    pub tree: AVLTree,
 }
 
 impl AuthenticatedTreeOpsBase {
-    pub fn new(tree: AvlTree, collect_changed_nodes: bool) -> AuthenticatedTreeOpsBase {
+    pub fn new(tree: AVLTree, collect_changed_nodes: bool) -> AuthenticatedTreeOpsBase {
         AuthenticatedTreeOpsBase {
             collect_changed_nodes,
             changed_nodes_buffer: Vec::new(),
@@ -29,12 +29,30 @@ impl AuthenticatedTreeOpsBase {
 pub trait AuthenticatedTreeOps {
     fn get_state<'a>(&'a self) -> &'a AuthenticatedTreeOpsBase;
     fn state<'a>(&'a mut self) -> &'a mut AuthenticatedTreeOpsBase;
-    fn tree<'a>(&'a mut self) -> &'a mut AvlTree {
+    fn tree<'a>(&'a mut self) -> &'a mut AVLTree {
         &mut self.state().tree
+    }
+    fn get_tree<'a>(&'a self) -> &'a AVLTree {
+        &self.get_state().tree
     }
 
     fn top_node(&self) -> NodeId {
-        self.get_state().tree.root.as_ref().unwrap().clone()
+        self.get_tree().root.as_ref().unwrap().clone()
+    }
+
+    fn extract_nodes(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<Vec<NodeId>> {
+		self.get_tree().extract_nodes(extractor)
+	}
+
+	fn extract_first_node(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<NodeId> {
+		self.get_tree().extract_first_node(extractor)
+	}
+
+    ///
+    /// @return `true` if this tree has an element that has the same label, as `node.label`, `false` otherwise.
+    ///
+	fn contains(&self, node: &NodeId) -> bool {
+		self.get_tree().contains(node)
     }
 
     /* The following four methods differ for the prover and verifier, but are used in the code below */
@@ -89,7 +107,7 @@ pub trait AuthenticatedTreeOps {
     /// The digest consists of the label of the root node followed by its height,
     /// expressed as a single (unsigned) byte
     ///
-    fn digest(&self) -> ADDigest {
+    fn digest(&self) -> Option<ADDigest> {
         let this = self.get_state();
         assert!(this.tree.height < 256);
         // rootNodeHeight should never be more than 255, so the toByte conversion is safe (though it may cause an incorrect
@@ -101,9 +119,9 @@ pub trait AuthenticatedTreeOps {
             let mut buf = BytesMut::new();
             buf.extend_from_slice(&this.tree.label(root));
             buf.put_u8(1);
-            buf.freeze()
+            Some(buf.freeze())
         } else {
-            panic!("Empty tree");
+            None
         }
     }
 

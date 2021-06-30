@@ -56,10 +56,12 @@ impl Node {
         hdr.visited || hdr.is_new
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> bool {
         let hdr = self.hdr_mut();
+		let was_new = hdr.is_new;
         hdr.is_new = false;
         hdr.visited = false;
+		was_new
     }
 
     pub fn mark_visited(&mut self, visited: bool) {
@@ -179,16 +181,17 @@ impl Node {
     }
 
     fn reset_recursive(node: &NodeId) {
-        node.borrow_mut().reset();
-        if let Node::Internal(r) = &*node.borrow() {
-            Self::reset_recursive(&r.left);
-            Self::reset_recursive(&r.right);
-        }
+		if node.borrow_mut().reset() {
+			if let Node::Internal(r) = &*node.borrow() {
+				Self::reset_recursive(&r.left);
+				Self::reset_recursive(&r.right);
+			}
+		}
     }
 }
 
 impl NodeHeader {
-    fn new(label: Option<Digest32>, key: Option<ADKey>) -> NodeHeader {
+    pub fn new(label: Option<Digest32>, key: Option<ADKey>) -> NodeHeader {
         NodeHeader {
             visited: false,
             is_new: true,
@@ -264,7 +267,7 @@ impl LeafNode {
 }
 
 #[derive(Clone)]
-pub struct AvlTree {
+pub struct AVLTree {
     pub root: Option<NodeId>,
     pub height: usize,
     pub key_length: usize,
@@ -272,9 +275,9 @@ pub struct AvlTree {
     pub resolver: Resolver,
 }
 
-impl AvlTree {
-    pub fn new(resolver: Resolver, key_length: usize, value_length: Option<usize>) -> AvlTree {
-        AvlTree {
+impl AVLTree {
+    pub fn new(resolver: Resolver, key_length: usize, value_length: Option<usize>) -> AVLTree {
+        AVLTree {
             key_length,
             value_length,
             resolver,
@@ -347,7 +350,7 @@ impl AvlTree {
         n.clone()
     }
 
-    pub fn extract_nodes(&self, extractor: fn(&Node) -> bool) -> Option<Vec<NodeId>> {
+    pub fn extract_nodes(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<Vec<NodeId>> {
         if let Some(root) = &self.root {
             let mut set = Vec::new();
             self.extract_nodes_recursive(extractor, root, &mut set);
@@ -357,7 +360,7 @@ impl AvlTree {
         }
     }
 
-    pub fn extract_first_node(&self, extractor: fn(&Node) -> bool) -> Option<NodeId> {
+    pub fn extract_first_node(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<NodeId> {
         if let Some(root) = &self.root {
             self.extract_first_node_recursive(extractor, root)
         } else {
@@ -367,20 +370,29 @@ impl AvlTree {
 
     fn extract_first_node_recursive(
         &self,
-        extractor: fn(&Node) -> bool,
+        extractor: &mut dyn FnMut(&mut Node) -> bool,
         node: &NodeId,
     ) -> Option<NodeId> {
-        if let Node::Internal(r) = &mut *node.borrow_mut() {
+		let nr = &mut *node.borrow_mut();
+        if let Node::Internal(r) = nr {
             self.extract_first_node_recursive(extractor, &self.resolve(&mut r.left))
                 .or(self.extract_first_node_recursive(extractor, &self.resolve(&mut r.right)))
-        } else if extractor(&node.borrow()) {
+        } else if extractor(nr) {
             Some(node.clone())
         } else {
             None
         }
     }
 
-    pub fn contains(&self, key: &ADKey, label: &Digest32) -> bool {
+	pub fn contains(&self, node: &NodeId) -> bool {
+        if let Some(root) = &self.root {
+            self.contains_recursive(root, &self.key(node), &self.label(node), false)
+        } else {
+            false
+        }
+    }
+
+    pub fn contains_key(&self, key: &ADKey, label: &Digest32) -> bool {
         if let Some(root) = &self.root {
             self.contains_recursive(root, key, label, false)
         } else {
@@ -426,14 +438,15 @@ impl AvlTree {
 
     fn extract_nodes_recursive(
         &self,
-        extractor: fn(&Node) -> bool,
+        extractor: &mut dyn FnMut(&mut Node) -> bool,
         node: &NodeId,
         set: &mut Vec<NodeId>,
     ) {
-        if let Node::Internal(r) = &mut *node.borrow_mut() {
+		let nr = &mut *node.borrow_mut();
+        if let Node::Internal(r) = nr {
             self.extract_nodes_recursive(extractor, &self.resolve(&mut r.left), set);
             self.extract_nodes_recursive(extractor, &self.resolve(&mut r.right), set);
-        } else if extractor(&node.borrow()) {
+        } else if extractor(nr) {
             set.push(node.clone())
         }
     }
@@ -540,7 +553,7 @@ impl AvlTree {
     }
 }
 
-impl fmt::Display for AvlTree {
+impl fmt::Display for AVLTree {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(root) = &self.root {
             self.fmt_recursive(f, &root, 0)

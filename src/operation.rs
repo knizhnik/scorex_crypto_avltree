@@ -23,14 +23,14 @@ pub enum Operation {
 
 #[derive(Debug, Clone)]
 pub struct KeyDelta {
-    key: ADKey,
-    delta: i64,
+    pub key: ADKey,
+    pub delta: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyValue {
-    key: ADKey,
-    value: ADValue,
+    pub key: ADKey,
+    pub value: ADValue,
 }
 
 impl Operation {
@@ -46,6 +46,19 @@ impl Operation {
             Operation::RemoveIfExists(key) => key,
         };
         key.clone()
+    }
+
+    pub fn value(&self) -> Option<ADValue> {
+        match self {
+            Operation::Lookup(_key) => None,
+            Operation::UnknownModification(_key) => None,
+            Operation::Insert(kv) => Some(kv.value.clone()),
+            Operation::InsertOrUpdate(kv) => Some(kv.value.clone()),
+            Operation::Update(kv) => Some(kv.value.clone()),
+            Operation::UpdateLongBy(_delta) => None,
+            Operation::Remove(_key) => None,
+            Operation::RemoveIfExists(_key) => None,
+        }
     }
 
     pub fn update_fn(&self, old_value: Option<ADValue>) -> Result<Option<ADValue>> {

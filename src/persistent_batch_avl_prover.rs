@@ -6,8 +6,8 @@ use crate::versioned_avl_storage::*;
 use anyhow::{ensure, Result};
 
 pub struct PersistentBatchAVLProver {
-    prover: BatchAVLProver,
-    storage: Box<dyn VersionedAVLStorage>,
+    pub prover: BatchAVLProver,
+    pub storage: Box<dyn VersionedAVLStorage>,
 }
 
 impl PersistentBatchAVLProver {
@@ -30,7 +30,7 @@ impl PersistentBatchAVLProver {
     }
 
     pub fn digest(&self) -> ADDigest {
-        self.prover.digest()
+        self.prover.digest().unwrap()
     }
 
     pub fn height(&self) -> usize {
@@ -45,6 +45,10 @@ impl PersistentBatchAVLProver {
         self.prover.unauthenticated_lookup(key)
     }
 
+	pub fn perform_one_operation(&mut self, operation: &Operation) -> Result<Option<ADValue>> {
+	    self.prover.perform_one_operation(operation)
+	}
+
     pub fn generate_proof_and_update_storage(
         &mut self,
         additional_data: Vec<(ADKey, ADValue)>,
@@ -53,7 +57,7 @@ impl PersistentBatchAVLProver {
         Ok(self.prover.generate_proof())
     }
 
-    fn rollback(&mut self, version: &ADDigest) -> Result<()> {
+    pub fn rollback(&mut self, version: &ADDigest) -> Result<()> {
         let (root, height) = self.storage.rollback(version)?;
         self.prover.base.tree.root = Some(root);
         self.prover.base.tree.height = height;

@@ -50,5 +50,5 @@ pub trait VersionedAVLStorage {
     ///
     /// @return versions store keeps
     ///
-    fn rollback_versions(&self) -> Box<dyn Iterator<Item = ADDigest>>;
+    fn rollback_versions<'a>(&'a self) -> Box<dyn Iterator<Item = ADDigest> + 'a>;
 }

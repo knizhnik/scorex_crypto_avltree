@@ -1,5 +1,5 @@
 [package]
-name = "scorex_avl_tree"
+name = "scorex_crypto_avltree"
 version = "0.1.0"
 authors = ["Konstantin Knizhnik <knizhnik@garret.ru>"]
 edition = "2018"
@@ -12,3 +12,4 @@ rand = "0.8.3"
 blake2 = "0.9"
 anyhow = "1.0"
 byteorder = "1.4.3"
+base16 = "0.2.1"

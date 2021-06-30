@@ -4,7 +4,7 @@ use crate::operation::*;
 use anyhow::Result;
 use bytes::{BufMut, Bytes, BytesMut};
 use rand::prelude::*;
-use rand::rngs::ThreadRng;
+use rand::RngCore;
 use std::cmp::Ordering;
 
 ///
@@ -42,7 +42,7 @@ pub struct BatchAVLProver {
 }
 
 impl BatchAVLProver {
-    pub fn new(tree: AvlTree, collect_changed_nodes: bool) -> BatchAVLProver {
+    pub fn new(tree: AVLTree, collect_changed_nodes: bool) -> BatchAVLProver {
         let mut prover = BatchAVLProver {
             base: AuthenticatedTreeOpsBase::new(tree, collect_changed_nodes),
             directions: Vec::new(),
@@ -109,27 +109,18 @@ impl BatchAVLProver {
     }
 
     ///
-    /// @return `true` if this tree has an element that has the same label, as `node.label`, `false` otherwise.
-    ////
-    pub fn contains(&self, node: &NodeId) -> bool {
-        self.base
-            .tree
-            .contains(&self.base.tree.key(node), &self.base.tree.label(node))
-    }
-
-    ///
     /// Generates the proof for all the operations in the list.
     /// Does NOT modify the tree
     ////
     pub fn generate_proof_for_operations(
         &self,
-        operations: Vec<Operation>,
+        operations: &Vec<Operation>,
     ) -> Result<(SerializedAdProof, ADDigest)> {
         let mut new_prover = BatchAVLProver::new(self.base.tree.clone(), false);
-        for op in &operations {
+        for op in operations.iter() {
             new_prover.perform_one_operation(op)?;
         }
-        Ok((new_prover.generate_proof(), new_prover.digest()))
+        Ok((new_prover.generate_proof(), new_prover.digest().unwrap()))
     }
 
     /* TODO Possible optimizations:
@@ -256,7 +247,7 @@ impl BatchAVLProver {
     /// @param rand - source of randomness
     /// @return Random leaf from the tree that is not positive or negative infinity
     ////
-    pub fn random_walk(&self, mut rand: ThreadRng) -> Option<(ADKey, ADValue)> {
+    pub fn random_walk(&self, rand: &mut dyn RngCore) -> Option<KeyValue> {
         let mut internal_node_fn = |r: &InternalNode, _dummy: ()| -> (NodeId, ()) {
             if rand.gen::<bool>() {
                 (r.right.clone(), ())
@@ -264,14 +255,15 @@ impl BatchAVLProver {
                 (r.left.clone(), ())
             }
         };
-        let mut leaf_fn = |leaf: &LeafNode, _dummy: ()| -> Option<(ADKey, ADValue)> {
+        let mut leaf_fn = |leaf: &LeafNode, _dummy: ()| -> Option<KeyValue> {
             let key = leaf.hdr.key.as_ref().unwrap().clone();
             if key == self.base.tree.positive_infinity_key() {
                 None
             } else if key == self.base.tree.negative_infinity_key() {
                 None
             } else {
-                Some((key, leaf.value.clone()))
+				let value = leaf.value.clone();
+				Some(KeyValue{key, value})
             }
         };
 
@@ -320,6 +312,48 @@ impl BatchAVLProver {
 
         self.tree_walk(&mut internal_node_fn, &mut leaf_fn, false)
     }
+
+
+    fn check_tree_helper(&self, r_node: &NodeId, post_proof: bool) -> (NodeId, NodeId, usize) {
+		let node = self.base.tree.copy(r_node);
+		assert!(!post_proof || (!node.visited() && !node.is_new()));
+		match node {
+			Node::Internal(r) => {
+				let key = r.hdr.key.unwrap();
+				if let Node::Internal(rl) = &*r.left.borrow() {
+					assert!(*rl.hdr.key.as_ref().unwrap() < key);
+				}
+				if let Node::Internal(rr) = &*r.right.borrow() {
+					assert!(*rr.hdr.key.as_ref().unwrap() > key);
+				}
+				let (min_left, max_left, left_height) = self.check_tree_helper(&r.left, post_proof);
+				let (min_right, max_right, right_height) = self.check_tree_helper(&r.right, post_proof);
+				assert_eq!(max_left.borrow().next_node_key(), min_right.borrow().key());
+				assert_eq!(min_right.borrow().key(), key);
+				assert!(r.balance >= -1 && r.balance <= 1 && r.balance == (right_height - left_height) as i8);
+				let height = std::cmp::max(left_height, right_height) + 1;
+				(min_left, max_right, height)
+			}
+			_ =>
+				(r_node.clone(), r_node.clone(), 0)
+		}
+    }
+
+	///
+    /// Is for debug only
+    ///
+    /// Checks the BST order, AVL balance, correctness of leaf positions, correctness of first and last
+    /// leaf, correctness of nextLeafKey fields
+    /// If postProof, then also checks for visited and isNew fields being false
+    /// Warning: slow -- takes linear time in tree size
+    /// Throws exception if something is wrong
+    ///
+	pub fn check_tree(&self, post_proof: bool) {
+       let (min_tree, max_tree, tree_height) = self.check_tree_helper(&self.top_node(), post_proof);
+	   assert_eq!(min_tree.borrow().key(), self.base.tree.negative_infinity_key());
+       assert_eq!(max_tree.borrow().next_node_key(), self.base.tree.positive_infinity_key());
+       assert_eq!(tree_height, self.base.tree.height);
+	}
 }
 
 impl AuthenticatedTreeOps for BatchAVLProver {

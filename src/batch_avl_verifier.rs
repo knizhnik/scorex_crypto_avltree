@@ -36,13 +36,13 @@ pub struct BatchAvlVerifier {
 impl BatchAvlVerifier {
     pub fn new(
         starting_digest: &ADDigest,
-        proof: SerializedAdProof,
-        tree: AvlTree,
+        proof: &SerializedAdProof,
+        tree: AVLTree,
         max_num_operations: Option<usize>,
         max_deletes: Option<usize>,
     ) -> Result<BatchAvlVerifier> {
         let mut verifier = BatchAvlVerifier {
-            proof,
+            proof:proof.clone(),
             max_num_operations,
             max_deletes,
             base: AuthenticatedTreeOpsBase::new(tree, false),
