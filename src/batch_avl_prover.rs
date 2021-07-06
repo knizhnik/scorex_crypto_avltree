@@ -282,7 +282,7 @@ impl BatchAVLProver {
                 // left all the way to the leaf
                 (r.left.clone(), true)
             } else {
-                match key.cmp(&r.hdr.key.as_ref().unwrap()) {
+                match (*key).cmp(r.hdr.key.as_ref().unwrap()) {
                     Ordering::Equal =>
                     // found in the tree -- go one step right, then left to the leaf
                     {
@@ -387,7 +387,7 @@ impl AuthenticatedTreeOps for BatchAVLProver {
         let ret = if self.found {
             true
         } else {
-            match key.cmp(&r.hdr.key.as_ref().unwrap()) {
+            match (*key).cmp(r.hdr.key.as_ref().unwrap()) {
                 Ordering::Equal => {
                     // found in the tree -- go one step right, then left to the leaf
                     self.found = true;

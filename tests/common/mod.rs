@@ -76,8 +76,8 @@ pub fn generate_verifier(
     value_length: Option<usize>,
     max_num_operations: Option<usize>,
     max_deletes: Option<usize>,
-) -> BatchAvlVerifier {
-    BatchAvlVerifier::new(
+) -> BatchAVLVerifier {
+    BatchAVLVerifier::new(
         initial_digest,
         proof,
         generate_tree(key_length, value_length),
@@ -121,11 +121,12 @@ fn check_removed(prover: &mut BatchAVLProver, node: &NodeId, removed_nodes: &Vec
         contains
             || removed_nodes
                 .iter()
-                .find(|rn| rn.borrow_mut().label() == node.borrow_mut().label())
-                .is_none()
+                .find(|rn| { rn.borrow().get_label() == node.borrow().get_label() })
+                .is_some()
     );
 
-    match &*node.borrow() {
+    let n = node.borrow().clone();
+    match n {
         Node::Internal(i) => {
             removed += check_removed(prover, &i.left, removed_nodes);
             removed += check_removed(prover, &i.right, removed_nodes);
@@ -141,7 +142,7 @@ fn check_removed(prover: &mut BatchAVLProver, node: &NodeId, removed_nodes: &Vec
 pub fn check_tree(prover: &mut BatchAVLProver, old_top: &NodeId, removed_nodes: &Vec<NodeId>) {
     // check that there are no nodes in removedNodes, that are still in the tree
     for r in removed_nodes {
-        assert!(prover.contains(r));
+        assert!(!prover.contains(r));
     }
 
     let removed = check_removed(prover, old_top, removed_nodes);
@@ -183,7 +184,11 @@ impl VersionedAVLStorage for VersionedAVLStorageMock {
         _additional_data: Vec<(ADKey, ADValue)>,
     ) -> Result<()> {
         let new_digest = prover.digest().unwrap();
-        assert!(self.v.as_ref().filter(|v|v.len() != new_digest.len()).is_none()); // Incorrect digest length
+        assert!(self
+            .v
+            .as_ref()
+            .filter(|v| v.len() != new_digest.len())
+            .is_none()); // Incorrect digest length
         self.v = Some(new_digest.clone());
         self.saved_nodes
             .insert(new_digest, (prover.top_node(), prover.get_tree().height));

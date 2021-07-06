@@ -4,7 +4,6 @@ use crate::operation::*;
 use anyhow::{ensure, Result};
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
-use std::cmp::Ordering;
 
 ///
 /// Implements the batch AVL verifier from https://eprint.iacr.org/2016/994
@@ -18,7 +17,7 @@ use std::cmp::Ordering;
 ///                         for a tighter running time bound and better attack protection.
 ///                         If None, defaults to maxNumOperations.
 ///
-pub struct BatchAvlVerifier {
+pub struct BatchAVLVerifier {
     proof: SerializedAdProof,
     max_num_operations: Option<usize>,
     max_deletes: Option<usize>,
@@ -33,15 +32,15 @@ pub struct BatchAvlVerifier {
     replay_index: usize,
 }
 
-impl BatchAvlVerifier {
+impl BatchAVLVerifier {
     pub fn new(
         starting_digest: &ADDigest,
         proof: &SerializedAdProof,
         tree: AVLTree,
         max_num_operations: Option<usize>,
         max_deletes: Option<usize>,
-    ) -> Result<BatchAvlVerifier> {
-        let mut verifier = BatchAvlVerifier {
+    ) -> Result<BatchAVLVerifier> {
+        let mut verifier = BatchAVLVerifier {
             proof: proof.clone(),
             max_num_operations,
             max_deletes,
@@ -115,7 +114,7 @@ impl BatchAvlVerifier {
                     };
                     let next_leaf_key = Bytes::copy_from_slice(&self.proof[i..i + key_length]);
                     i += key_length;
-                    let value_length = self.base.tree.value_length.unwrap_or_else(||{
+                    let value_length = self.base.tree.value_length.unwrap_or_else(|| {
                         let vl = BigEndian::read_u32(&self.proof[i..i + 4]) as usize;
                         i += 4;
                         vl
@@ -160,7 +159,7 @@ impl BatchAvlVerifier {
     }
 }
 
-impl AuthenticatedTreeOps for BatchAvlVerifier {
+impl AuthenticatedTreeOps for BatchAVLVerifier {
     fn get_state<'a>(&'a self) -> &'a AuthenticatedTreeOpsBase {
         return &self.base;
     }
@@ -204,12 +203,12 @@ impl AuthenticatedTreeOps for BatchAvlVerifier {
         // checks that the key is either equal to the leaf's key
         // or is between the leaf's key and its nextLeafKey
         // See https://eprint.iacr.org/2016/994 Appendix B paragraph "Our Algorithms"
-        let c = key.cmp(&leaf.hdr.key.as_ref().unwrap());
-        assert!(c != Ordering::Less);
-        if c == Ordering::Equal {
+		let leaf_key = leaf.hdr.key.as_ref().unwrap();
+        if *key == *leaf_key {
             true
         } else {
-            assert!(key < &leaf.next_node_key);
+            assert!(*key > *leaf_key);
+            assert!(*key < leaf.next_node_key);
             false
         }
     }

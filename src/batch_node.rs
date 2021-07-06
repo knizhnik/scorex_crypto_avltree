@@ -73,6 +73,10 @@ impl Node {
         self.hdr().is_new
     }
 
+    pub fn get_label(&self) -> Digest32 {
+        self.hdr().label.unwrap()
+    }
+
     pub fn label(&mut self) -> Digest32 {
         if let Some(label) = self.hdr().label {
             return label;
@@ -425,7 +429,7 @@ impl AVLTree {
                 if key_found {
                     self.contains_recursive(&self.resolve(&mut r.left), key, label, true)
                 } else {
-                    match key.cmp(&r.hdr.key.as_ref().unwrap()) {
+                    match (*key).cmp(r.hdr.key.as_ref().unwrap()) {
                         Ordering::Equal =>
                         // found in the tree -- go one step right, then left to the leaf
                         {

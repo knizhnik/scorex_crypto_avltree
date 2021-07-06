@@ -4,6 +4,7 @@ use rand::{Rng, SeedableRng};
 use scorex_crypto_avltree::authenticated_tree_ops::*;
 use scorex_crypto_avltree::batch_node::*;
 use scorex_crypto_avltree::operation::*;
+use scorex_crypto_avltree::batch_avl_verifier::BatchAVLVerifier;
 use scorex_crypto_avltree::persistent_batch_avl_prover::*;
 
 mod common;
@@ -39,11 +40,11 @@ fn test_removed_nodes() {
     }
     let removed_manual = &all[1..];
 
-	let key = leaf0.borrow().key();
+    let key = leaf0.borrow().key();
     prover
         .perform_one_operation(&Operation::Remove(key))
         .unwrap();
-	let key = leaf1.borrow().key();
+    let key = leaf1.borrow().key();
     prover
         .perform_one_operation(&Operation::Lookup(key))
         .unwrap();
@@ -55,12 +56,13 @@ fn test_removed_nodes() {
     assert_eq!(removed.len(), removed_manual.len());
     for n in removed_manual {
         assert!(removed
-				.iter()
-				.find(|rn| {
-					let l1 = rn.borrow_mut().label();
-					let l2 = n.borrow_mut().label();
-					l1 == l2
-				}).is_some());
+            .iter()
+            .find(|rn| {
+                let l1 = rn.borrow_mut().label();
+                let l2 = n.borrow_mut().label();
+                l1 == l2
+            })
+            .is_some());
     }
     prover.generate_proof();
 }
@@ -755,10 +757,7 @@ fn test_removed_nodes_and_new_nodes() {
         let m_size = kv_list.len();
         let to_insert = kv_list.iter().map(|kv| Operation::Insert(kv.clone()));
         let to_remove: Vec<Operation> = (0..m_size)
-            .flat_map(|i| {
-                prover
-                    .random_walk(&mut StdRng::seed_from_u64(i as u64))
-            })
+            .flat_map(|i| prover.random_walk(&mut StdRng::seed_from_u64(i as u64)))
             .map(|kv| Operation::Remove(kv.key))
             .collect();
         let modifications = to_insert.chain(to_remove);
@@ -770,11 +769,12 @@ fn test_removed_nodes_and_new_nodes() {
         new_nodes.iter().for_each(|nn| {
             assert!(removed
                 .iter()
-					.find(|r| {
-						let l1 = r.borrow_mut().label();
-						let l2 = nn.borrow_mut().label();
-						l1 == l2
-					}).is_none())
+                .find(|r| {
+                    let l1 = r.borrow_mut().label();
+                    let l2 = nn.borrow_mut().label();
+                    l1 == l2
+                })
+                .is_none())
         });
 
         prover.generate_proof();
@@ -791,15 +791,16 @@ fn test_return_removed_nodes() {
         let m_size = kv_list.len();
         let to_insert = kv_list.iter().map(|kv| Operation::Insert(kv.clone()));
         let to_remove: Vec<Operation> = (0..m_size)
-            .map(|i| {
+            .flat_map(|i| {
                 prover
                     .random_walk(&mut StdRng::seed_from_u64(i as u64))
-                    .unwrap()
             })
             .map(|kv| Operation::Remove(kv.key))
             .collect();
         let modifications = to_insert.chain(to_remove.clone());
-        modifications.for_each(|op| assert!(prover.perform_one_operation(&op).is_ok()));
+        modifications.for_each(|op| {
+            let _ = prover.perform_one_operation(&op);
+        });
 
         let removed = prover.removed_nodes();
         assert!(removed.len() > m_size);
@@ -978,9 +979,10 @@ fn test_unauthenticated_lookup() {
 #[test]
 fn test_extract_nodes() {
     // BatchAVLVerifier: extractNodes and extractFirstNode
-    let mut prover = generate_and_populate_prover(0).0;
+    let mut prover = generate_prover(KEY_LENGTH, None);
     let digest = prover.digest().unwrap();
     let key_values = generate_kv_list(INITIAL_TREE_SIZE);
+    assert!(key_values.len() == INITIAL_TREE_SIZE);
     key_values.iter().for_each(|kv| {
         assert!(prover
             .perform_one_operation(&Operation::Insert(kv.clone()))
@@ -998,15 +1000,17 @@ fn test_extract_nodes() {
         })
         .unwrap();
 
-    let mut non_infinite_leaf = |n: &mut Node| match n {
-        Node::Leaf(_) => n.label() == infinity_leaf.borrow_mut().label(),
-        _ => false,
-    };
     key_values.iter().for_each(|kv| {
         assert!(verifier
             .perform_one_operation(&Operation::Insert(kv.clone()))
             .is_ok())
     });
+
+    let infinity_label = infinity_leaf.borrow_mut().label();
+    let mut non_infinite_leaf = |n: &mut Node| match n {
+        Node::Leaf(_) => n.label() != infinity_label,
+        _ => false,
+    };
 
     //extract all leafs
     let all_leafs = verifier.extract_nodes(&mut non_infinite_leaf);
@@ -1039,15 +1043,16 @@ fn test_verfier_extract_first_node() {
         })
         .unwrap();
 
-    let mut non_infinite_leaf = |n: &mut Node| match n {
-        Node::Leaf(_) => n.label() == infinity_leaf.borrow_mut().label(),
-        _ => false,
-    };
     key_values.iter().for_each(|kv| {
         assert!(verifier
             .perform_one_operation(&Operation::Insert(kv.clone()))
             .is_ok())
     });
+    let infinity_label = infinity_leaf.borrow_mut().label();
+    let mut non_infinite_leaf = |n: &mut Node| match n {
+        Node::Leaf(_) => n.label() != infinity_label,
+        _ => false,
+    };
 
     //First extracted leaf should be smallest
     let smallest_key = key_values.iter().map(|kv| kv.key.clone()).min().unwrap();
@@ -1178,7 +1183,10 @@ fn test_modifications() {
                 None,
                 None,
             );
-            assert!(vr2.perform_one_operation(&non_existing_lookup).unwrap().is_none());
+            assert!(vr2
+                .perform_one_operation(&non_existing_lookup)
+                .unwrap()
+                .is_none());
         }
     }
 }
@@ -1227,7 +1235,10 @@ fn test_authenticated_set() {
 
     for _ in 0..TEST_ITERATIONS {
         let key = random_key();
-        let m = Operation::Insert(KeyValue{key, value:Bytes::new()});
+        let m = Operation::Insert(KeyValue {
+            key,
+            value: Bytes::new(),
+        });
         assert!(prover.perform_one_operation(&m).is_ok());
         let pf = prover.generate_proof();
         let _ = prover.digest();
@@ -1315,112 +1326,109 @@ fn test_verifier_fails() {
         assert!(p
             .perform_one_operation(&Operation::Insert(random_kv()))
             .is_ok());
+    }
+    let mut pf = p.generate_proof();
 
-        let mut pf = p.generate_proof();
+    // see if the proof for 50 mods will be allowed when we permit only 2
+    let v = BatchAVLVerifier::new(
+        &digest,
+        &pf,
+        generate_tree(KEY_LENGTH, Some(VALUE_LENGTH)),
+        Some(2),
+        Some(0),
+    );
+    assert!(v.is_err()); // Failed to reject too long a proof"
 
-        // see if the proof for 50 mods will be allowed when we permit only 2
-        let mut v = generate_verifier(
-            &digest,
-            &pf,
-            KEY_LENGTH,
-            Some(VALUE_LENGTH),
-            Some(2),
-            Some(0),
-        );
-        assert!(v.digest().unwrap().is_empty()); // Failed to reject too long a proof"
+    // see if wrong digest will be allowed
+    let rnd = rand::random::<[u8; KEY_LENGTH]>();
+    let v = BatchAVLVerifier::new(
+        &Bytes::copy_from_slice(&rnd[..]),
+        &pf,
+        generate_tree(KEY_LENGTH, Some(VALUE_LENGTH)),
+        Some(50),
+        Some(0),
+    );
+    assert!(v.is_err()); // Failed to reject wrong digest
 
-        // see if wrong digest will be allowed
-        let rnd = rand::random::<[u8; KEY_LENGTH]>();
-        v = generate_verifier(
-            &Bytes::copy_from_slice(&rnd[..]),
-            &pf,
-            KEY_LENGTH,
-            Some(VALUE_LENGTH),
-            Some(50),
-            Some(0),
-        );
-        assert!(v.digest().unwrap().is_empty()); // Failed to reject wrong digest
+    for _ in 0..10 {
+        digest = p.digest().unwrap();
+        for _ in 0..8 {
+            assert!(p
+                .perform_one_operation(&Operation::Insert(random_kv()))
+                .is_ok()); // failed to insert
 
-        for _ in 0..10 {
-            digest = p.digest().unwrap();
-            for _ in 0..8 {
+            let mut v = generate_verifier(
+                &digest,
+                &p.generate_proof(),
+                KEY_LENGTH,
+                Some(VALUE_LENGTH),
+                Some(8),
+                Some(0),
+            );
+            assert!(v.digest().is_some()); // verification failed to construct tree
+                                           // Try 5 inserts that do not match -- with overwhelming probability one of them will go to a leaf
+                                           // that is not in the conveyed tree, and verifier will complain
+            for _ in 0..5 {
+                let key = random_key();
+                assert!(v
+                    .perform_one_operation(&Operation::Insert(KeyValue {
+                        key: key.clone(),
+                        value: random_value()
+                    }))
+                    .is_ok());
+                assert!(v.digest().unwrap().is_empty()); // verification succeeded when it should have failed, because of a missing leaf
+
+                digest = p.digest().unwrap();
                 assert!(p
                     .perform_one_operation(&Operation::Insert(random_kv()))
-                    .is_ok()); // failed to insert
+                    .is_ok());
+                pf = p.generate_proof();
+                p.check_tree(false);
 
+                // Change the direction of the proof and make sure verifier fails
+                let mut vpf = pf.to_vec();
+                *vpf.last_mut().unwrap() = !vpf.last().unwrap();
                 v = generate_verifier(
                     &digest,
-                    &p.generate_proof(),
+                    &Bytes::copy_from_slice(&vpf),
                     KEY_LENGTH,
                     Some(VALUE_LENGTH),
-                    Some(8),
+                    Some(1),
                     Some(0),
                 );
                 assert!(v.digest().is_some()); // verification failed to construct tree
-                                               // Try 5 inserts that do not match -- with overwhelming probability one of them will go to a leaf
-                                               // that is not in the conveyed tree, and verifier will complain
-                for _ in 0..5 {
-                    let key = random_key();
-                    assert!(v
-                        .perform_one_operation(&Operation::Insert(KeyValue {
-                            key: key.clone(),
-                            value: random_value()
-                        }))
-                        .is_ok());
-                    assert!(v.digest().unwrap().is_empty()); // verification succeeded when it should have failed, because of a missing leaf
+                assert!(v
+                    .perform_one_operation(&Operation::Insert(KeyValue {
+                        key: key.clone(),
+                        value: random_value()
+                    }))
+                    .is_ok());
+                assert!(v.digest().is_some()); // verification succeeded when it should have failed, because of the wrong direction
 
-                    digest = p.digest().unwrap();
-                    assert!(p
-                        .perform_one_operation(&Operation::Insert(random_kv()))
-                        .is_ok());
-                    pf = p.generate_proof();
-                    p.check_tree(false);
-
-                    // Change the direction of the proof and make sure verifier fails
-                    let mut vpf = pf.to_vec();
-                    *vpf.last_mut().unwrap() = !vpf.last().unwrap();
-                    v = generate_verifier(
-                        &digest,
-                        &Bytes::copy_from_slice(&vpf),
-                        KEY_LENGTH,
-                        Some(VALUE_LENGTH),
-                        Some(1),
-                        Some(0),
-                    );
-                    assert!(v.digest().is_some()); // verification failed to construct tree
-                    assert!(v
-                        .perform_one_operation(&Operation::Insert(KeyValue {
-                            key: key.clone(),
-                            value: random_value()
-                        }))
-                        .is_ok());
-                    assert!(v.digest().is_some()); // verification succeeded when it should have failed, because of the wrong direction
-
-                    // Change the key by a large amount -- verification should fail with overwhelming probability
-                    // because there are 1000 keys in the tree
-                    // First, change the proof back to be correct
-                    *vpf.last_mut().unwrap() = !vpf.last().unwrap();
-                    let mut vk = key.to_vec();
-                    vk[0] ^= 1u8 << 7;
-                    let key = Bytes::copy_from_slice(&vk);
-                    v = generate_verifier(
-                        &digest,
-                        &Bytes::copy_from_slice(&vpf),
-                        KEY_LENGTH,
-                        Some(VALUE_LENGTH),
-                        Some(1),
-                        Some(0),
-                    );
-                    assert!(v.digest().is_some()); // verification failed to construct tree
-                    assert!(v
-                        .perform_one_operation(&Operation::Insert(KeyValue {
-                            key,
-                            value: random_value()
-                        }))
-                        .is_ok());
-                    assert!(v.digest().unwrap().is_empty()); // verification succeeded when it should have failed because of the wrong key
-                                                             // put the key back the way it should be, because otherwise it's messed up in the prover tree
-                }
+                // Change the key by a large amount -- verification should fail with overwhelming probability
+                // because there are 1000 keys in the tree
+                // First, change the proof back to be correct
+                *vpf.last_mut().unwrap() = !vpf.last().unwrap();
+                let mut vk = key.to_vec();
+                vk[0] ^= 1u8 << 7;
+                let key = Bytes::copy_from_slice(&vk);
+                v = generate_verifier(
+                    &digest,
+                    &Bytes::copy_from_slice(&vpf),
+                    KEY_LENGTH,
+                    Some(VALUE_LENGTH),
+                    Some(1),
+                    Some(0),
+                );
+                assert!(v.digest().is_some()); // verification failed to construct tree
+                assert!(v
+                    .perform_one_operation(&Operation::Insert(KeyValue {
+                        key,
+                        value: random_value()
+                    }))
+                    .is_ok());
+                assert!(v.digest().unwrap().is_empty()); // verification succeeded when it should have failed because of the wrong key
+                                                         // put the key back the way it should be, because otherwise it's messed up in the prover tree
             }
         }
     }
@@ -1433,7 +1441,8 @@ fn test_remove_single_random_element() {
     const MAX_SET_SIZE: usize = 100000;
     let mut generate_proof = true;
 
-    for cnt in MIN_SET_SIZE..MAX_SET_SIZE {
+    for _ in 0..TEST_ITERATIONS {
+        let cnt = rand::thread_rng().gen_range(MIN_SET_SIZE..MAX_SET_SIZE);
         generate_proof = !generate_proof;
 
         let mut keys: Vec<ADKey> = Vec::new();
@@ -1469,9 +1478,7 @@ fn test_remove_single_random_element() {
         keys.retain(|x| *x != rnd_key);
         for _ in 0..keys.len() {
             let i = rand::thread_rng().gen_range(0..keys.len());
-            assert!(prover
-                .perform_one_operation(&Operation::Remove(keys[i].clone()))
-                .is_ok());
+            let _ = prover.perform_one_operation(&Operation::Remove(keys[i].clone()));
         }
     }
 }
@@ -1596,7 +1603,7 @@ fn test_successful_modifications() {
         assert_eq!(v.digest().unwrap(), digest); // Built tree with wrong digest
         for m in current_mods {
             assert!(v.perform_one_operation(&m).is_ok());
-		}
+        }
         assert_eq!(v.digest(), p.digest()); // Tree has wrong digest after verification
     }
 
