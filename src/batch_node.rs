@@ -3,6 +3,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::VarBlake2b;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::cell::RefCell;
+//use debug_cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt;
 use std::rc::Rc;
@@ -52,16 +53,15 @@ const LEAF_NODE_PREFIX: u8 = 1;
 
 impl Node {
     pub fn visited(&self) -> bool {
-        let hdr = self.hdr();
-        hdr.visited || hdr.is_new
+        self.hdr().visited
     }
 
     pub fn reset(&mut self) -> bool {
         let hdr = self.hdr_mut();
-		let was_new = hdr.is_new;
+        let was_new = hdr.is_new;
         hdr.is_new = false;
         hdr.visited = false;
-		was_new
+        was_new
     }
 
     pub fn mark_visited(&mut self, visited: bool) {
@@ -181,12 +181,12 @@ impl Node {
     }
 
     fn reset_recursive(node: &NodeId) {
-		if node.borrow_mut().reset() {
-			if let Node::Internal(r) = &*node.borrow() {
-				Self::reset_recursive(&r.left);
-				Self::reset_recursive(&r.right);
-			}
-		}
+        if node.borrow_mut().reset() {
+            if let Node::Internal(r) = &*node.borrow() {
+                Self::reset_recursive(&r.left);
+                Self::reset_recursive(&r.right);
+            }
+        }
     }
 }
 
@@ -230,8 +230,9 @@ impl InternalNode {
                 this.left = left.clone();
                 this.right = right.clone();
                 this.balance = balance;
+                this.hdr.label = None;
             } else {
-                return Self::new(None, left, right, balance);
+                return Self::new(this.hdr.key.clone(), left, right, balance);
             }
         } else {
             panic!("Not internal node");
@@ -326,6 +327,10 @@ impl AVLTree {
         node.borrow().visited()
     }
 
+    pub fn is_new(&self, node: &NodeId) -> bool {
+        node.borrow().is_new()
+    }
+
     pub fn mark_visited(&self, node: &NodeId, visited: bool) {
         node.borrow_mut().mark_visited(visited)
     }
@@ -350,7 +355,10 @@ impl AVLTree {
         n.clone()
     }
 
-    pub fn extract_nodes(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<Vec<NodeId>> {
+    pub fn extract_nodes(
+        &self,
+        extractor: &mut dyn FnMut(&mut Node) -> bool,
+    ) -> Option<Vec<NodeId>> {
         if let Some(root) = &self.root {
             let mut set = Vec::new();
             self.extract_nodes_recursive(extractor, root, &mut set);
@@ -360,7 +368,10 @@ impl AVLTree {
         }
     }
 
-    pub fn extract_first_node(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<NodeId> {
+    pub fn extract_first_node(
+        &self,
+        extractor: &mut dyn FnMut(&mut Node) -> bool,
+    ) -> Option<NodeId> {
         if let Some(root) = &self.root {
             self.extract_first_node_recursive(extractor, root)
         } else {
@@ -373,7 +384,7 @@ impl AVLTree {
         extractor: &mut dyn FnMut(&mut Node) -> bool,
         node: &NodeId,
     ) -> Option<NodeId> {
-		let nr = &mut *node.borrow_mut();
+        let nr = &mut *node.borrow_mut();
         if let Node::Internal(r) = nr {
             self.extract_first_node_recursive(extractor, &self.resolve(&mut r.left))
                 .or(self.extract_first_node_recursive(extractor, &self.resolve(&mut r.right)))
@@ -384,7 +395,7 @@ impl AVLTree {
         }
     }
 
-	pub fn contains(&self, node: &NodeId) -> bool {
+    pub fn contains(&self, node: &NodeId) -> bool {
         if let Some(root) = &self.root {
             self.contains_recursive(root, &self.key(node), &self.label(node), false)
         } else {
@@ -442,7 +453,7 @@ impl AVLTree {
         node: &NodeId,
         set: &mut Vec<NodeId>,
     ) {
-		let nr = &mut *node.borrow_mut();
+        let nr = &mut *node.borrow_mut();
         if let Node::Internal(r) = nr {
             self.extract_nodes_recursive(extractor, &self.resolve(&mut r.left), set);
             self.extract_nodes_recursive(extractor, &self.resolve(&mut r.right), set);

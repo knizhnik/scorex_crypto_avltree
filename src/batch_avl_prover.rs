@@ -17,7 +17,7 @@ use std::cmp::Ordering;
 ///                            WARNING if you pass it, all isNew and visited flags should be set correctly and height should be correct
 /// @param collectChangedNodes - changed nodes will be collected to a separate buffer during tree modifications if `true`
 /// @param hf                  - hash function
-////
+///
 pub struct BatchAVLProver {
     pub base: AuthenticatedTreeOpsBase,
 
@@ -52,7 +52,6 @@ impl BatchAVLProver {
             old_top_node: None,
             found: false,
         };
-        prover.old_top_node = prover.base.tree.root.clone();
         if prover.base.tree.root.is_none() {
             let t = LeafNode::new(
                 &prover.base.tree.negative_infinity_key(),
@@ -63,6 +62,7 @@ impl BatchAVLProver {
             prover.base.tree.height = 1;
             prover.base.tree.reset();
         }
+        prover.old_top_node = prover.base.tree.root.clone();
         prover
     }
 
@@ -155,13 +155,13 @@ impl BatchAVLProver {
                     packaged_tree.put_u8(LEAF_IN_PACKAGED_PROOF);
                     if !*previous_leaf_available {
                         packaged_tree.extend_from_slice(&leaf.hdr.key.unwrap());
-                        packaged_tree.extend_from_slice(&leaf.next_node_key);
-                        if self.base.tree.value_length.is_none() {
-                            packaged_tree.put_u32(leaf.value.len() as u32);
-                        }
-                        packaged_tree.extend_from_slice(&leaf.value);
-                        *previous_leaf_available = true;
                     }
+                    packaged_tree.extend_from_slice(&leaf.next_node_key);
+                    if self.base.tree.value_length.is_none() {
+                        packaged_tree.put_u32(leaf.value.len() as u32);
+                    }
+                    packaged_tree.extend_from_slice(&leaf.value);
+                    *previous_leaf_available = true;
                 }
                 Node::Internal(node) => {
                     self.pack_tree(&node.left, packaged_tree, previous_leaf_available);
@@ -262,8 +262,8 @@ impl BatchAVLProver {
             } else if key == self.base.tree.negative_infinity_key() {
                 None
             } else {
-				let value = leaf.value.clone();
-				Some(KeyValue{key, value})
+                let value = leaf.value.clone();
+                Some(KeyValue { key, value })
             }
         };
 
@@ -313,33 +313,36 @@ impl BatchAVLProver {
         self.tree_walk(&mut internal_node_fn, &mut leaf_fn, false)
     }
 
-
     fn check_tree_helper(&self, r_node: &NodeId, post_proof: bool) -> (NodeId, NodeId, usize) {
-		let node = self.base.tree.copy(r_node);
-		assert!(!post_proof || (!node.visited() && !node.is_new()));
-		match node {
-			Node::Internal(r) => {
-				let key = r.hdr.key.unwrap();
-				if let Node::Internal(rl) = &*r.left.borrow() {
-					assert!(*rl.hdr.key.as_ref().unwrap() < key);
-				}
-				if let Node::Internal(rr) = &*r.right.borrow() {
-					assert!(*rr.hdr.key.as_ref().unwrap() > key);
-				}
-				let (min_left, max_left, left_height) = self.check_tree_helper(&r.left, post_proof);
-				let (min_right, max_right, right_height) = self.check_tree_helper(&r.right, post_proof);
-				assert_eq!(max_left.borrow().next_node_key(), min_right.borrow().key());
-				assert_eq!(min_right.borrow().key(), key);
-				assert!(r.balance >= -1 && r.balance <= 1 && r.balance == (right_height - left_height) as i8);
-				let height = std::cmp::max(left_height, right_height) + 1;
-				(min_left, max_right, height)
-			}
-			_ =>
-				(r_node.clone(), r_node.clone(), 0)
-		}
+        let node = self.base.tree.copy(r_node);
+        assert!(!post_proof || (!node.visited() && !node.is_new()));
+        match node {
+            Node::Internal(r) => {
+                let key = r.hdr.key.unwrap();
+                if let Node::Internal(rl) = &*r.left.borrow() {
+                    assert!(*rl.hdr.key.as_ref().unwrap() < key);
+                }
+                if let Node::Internal(rr) = &*r.right.borrow() {
+                    assert!(*rr.hdr.key.as_ref().unwrap() > key);
+                }
+                let (min_left, max_left, left_height) = self.check_tree_helper(&r.left, post_proof);
+                let (min_right, max_right, right_height) =
+                    self.check_tree_helper(&r.right, post_proof);
+                assert_eq!(max_left.borrow().next_node_key(), min_right.borrow().key());
+                assert_eq!(min_right.borrow().key(), key);
+                assert!(
+                    r.balance >= -1
+                        && r.balance <= 1
+                        && r.balance == (right_height as i8 - left_height as i8)
+                );
+                let height = std::cmp::max(left_height, right_height) + 1;
+                (min_left, max_right, height)
+            }
+            _ => (r_node.clone(), r_node.clone(), 1),
+        }
     }
 
-	///
+    ///
     /// Is for debug only
     ///
     /// Checks the BST order, AVL balance, correctness of leaf positions, correctness of first and last
@@ -348,12 +351,19 @@ impl BatchAVLProver {
     /// Warning: slow -- takes linear time in tree size
     /// Throws exception if something is wrong
     ///
-	pub fn check_tree(&self, post_proof: bool) {
-       let (min_tree, max_tree, tree_height) = self.check_tree_helper(&self.top_node(), post_proof);
-	   assert_eq!(min_tree.borrow().key(), self.base.tree.negative_infinity_key());
-       assert_eq!(max_tree.borrow().next_node_key(), self.base.tree.positive_infinity_key());
-       assert_eq!(tree_height, self.base.tree.height);
-	}
+    pub fn check_tree(&self, post_proof: bool) {
+        let (min_tree, max_tree, tree_height) =
+            self.check_tree_helper(&self.top_node(), post_proof);
+        assert_eq!(
+            min_tree.borrow().key(),
+            self.base.tree.negative_infinity_key()
+        );
+        assert_eq!(
+            max_tree.borrow().next_node_key(),
+            self.base.tree.positive_infinity_key()
+        );
+        assert_eq!(tree_height, self.base.tree.height);
+    }
 }
 
 impl AuthenticatedTreeOps for BatchAVLProver {
@@ -404,7 +414,7 @@ impl AuthenticatedTreeOps for BatchAVLProver {
         } else {
             if ret {
                 let i = self.directions_bit_length >> 3;
-                self.directions[i] = self.directions[i] | (1 << (self.directions_bit_length & 7));
+                self.directions[i] |= 1 << (self.directions_bit_length & 7);
                 // change last byte
             }
         }

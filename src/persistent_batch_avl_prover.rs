@@ -45,9 +45,9 @@ impl PersistentBatchAVLProver {
         self.prover.unauthenticated_lookup(key)
     }
 
-	pub fn perform_one_operation(&mut self, operation: &Operation) -> Result<Option<ADValue>> {
-	    self.prover.perform_one_operation(operation)
-	}
+    pub fn perform_one_operation(&mut self, operation: &Operation) -> Result<Option<ADValue>> {
+        self.prover.perform_one_operation(operation)
+    }
 
     pub fn generate_proof_and_update_storage(
         &mut self,

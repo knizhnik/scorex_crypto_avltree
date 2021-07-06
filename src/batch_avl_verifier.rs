@@ -42,7 +42,7 @@ impl BatchAvlVerifier {
         max_deletes: Option<usize>,
     ) -> Result<BatchAvlVerifier> {
         let mut verifier = BatchAvlVerifier {
-            proof:proof.clone(),
+            proof: proof.clone(),
             max_num_operations,
             max_deletes,
             base: AuthenticatedTreeOpsBase::new(tree, false),
@@ -115,7 +115,7 @@ impl BatchAvlVerifier {
                     };
                     let next_leaf_key = Bytes::copy_from_slice(&self.proof[i..i + key_length]);
                     i += key_length;
-                    let value_length = self.base.tree.value_length.unwrap_or({
+                    let value_length = self.base.tree.value_length.unwrap_or_else(||{
                         let vl = BigEndian::read_u32(&self.proof[i..i + 4]) as usize;
                         i += 4;
                         vl

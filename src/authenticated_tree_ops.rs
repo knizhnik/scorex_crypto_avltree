@@ -41,46 +41,47 @@ pub trait AuthenticatedTreeOps {
     }
 
     fn extract_nodes(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<Vec<NodeId>> {
-		self.get_tree().extract_nodes(extractor)
-	}
+        self.get_tree().extract_nodes(extractor)
+    }
 
-	fn extract_first_node(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<NodeId> {
-		self.get_tree().extract_first_node(extractor)
-	}
+    fn extract_first_node(&self, extractor: &mut dyn FnMut(&mut Node) -> bool) -> Option<NodeId> {
+        self.get_tree().extract_first_node(extractor)
+    }
 
     ///
     /// @return `true` if this tree has an element that has the same label, as `node.label`, `false` otherwise.
     ///
-	fn contains(&self, node: &NodeId) -> bool {
-		self.get_tree().contains(node)
+    fn contains(&self, node: &NodeId) -> bool {
+        self.get_tree().contains(node)
     }
 
-    /* The following four methods differ for the prover and verifier, but are used in the code below */
-    /**
-     * @return - whether we found the correct leaf and the key contains it
-     */
+    // The following four methods differ for the prover and verifier, but are used in the code below'
+
+    ///
+    /// @return - whether we found the correct leaf and the key contains it
+    ///
     fn key_matches_leaf(&mut self, key: &ADKey, leaf: &LeafNode) -> bool;
 
-    /**
-     * @return - whether to go left or right when searching for key and standing at r
-     */
+    ///
+    /// @return - whether to go left or right when searching for key and standing at r
+    ///
     fn next_direction_is_left(&mut self, key: &ADKey, r: &InternalNode) -> bool;
 
-    /**
-     * Deletions go down the tree twice -- once to find the leaf and realize
-     * that it needs to be deleted, and the second time to actually perform the deletion.
-     * This method will re-create comparison results. Each time it's called, it will give
-     * the next comparison result of
-     * key and node.key, where node starts at the root and progresses down the tree
-     * according to the comparison results.
-     *
-     * @return - result of previous comparison of key and relevant node's key
-     */
+    ///
+    /// Deletions go down the tree twice -- once to find the leaf and realize
+    /// that it needs to be deleted, and the second time to actually perform the deletion.
+    /// This method will re-create comparison results. Each time it's called, it will give
+    /// the next comparison result of
+    /// key and node.key, where node starts at the root and progresses down the tree
+    /// according to the comparison results.
+    ///
+    /// @return - result of previous comparison of key and relevant node's key
+    ///
     fn replay_comparison(&mut self) -> i32;
 
     fn on_node_visit(&mut self, node: &NodeId, operation: &Operation, is_rotate: bool) {
         let this = self.state();
-        if this.collect_changed_nodes && !this.tree.visited(node) {
+        if this.collect_changed_nodes && !this.tree.visited(node) && !this.tree.is_new(node) {
             if is_rotate {
                 // during rotate operation node may stay in the tree in a different position
                 this.changed_nodes_buffer_to_check.push(node.clone());
@@ -118,7 +119,7 @@ pub trait AuthenticatedTreeOps {
         if let Some(root) = &this.tree.root {
             let mut buf = BytesMut::new();
             buf.extend_from_slice(&this.tree.label(root));
-            buf.put_u8(1);
+            buf.put_u8(this.tree.height as u8);
             Some(buf.freeze())
         } else {
             None
@@ -236,28 +237,27 @@ pub trait AuthenticatedTreeOps {
                 self.tree().height -= 1;
             }
             self.tree().root = Some(post_delete_root_node);
-            Ok(old_value)
         } else {
             if height_increased {
                 self.tree().height += 1;
             }
             self.tree().root = Some(new_root_node);
-            Ok(old_value)
         }
+        Ok(old_value)
     }
 
-    /**
-     * returns the new root, an indicator whether tree has been modified at r or below,
-     * an indicator whether the height has increased,
-     * an indicator whether we need to go delete the leaf that was just reached,
-     * and the old value associated with key
-     *
-     * Handles binary tree search and AVL rebalancing
-     *
-     * Deletions are not handled here in order not to complicate the code even more -- in case of deletion,
-     * we don't change the tree, but simply return toDelete = true.
-     * We then go in and delete using deleteHelper
-     */
+    ///
+    /// returns the new root, an indicator whether tree has been modified at r or below,
+    /// an indicator whether the height has increased,
+    /// an indicator whether we need to go delete the leaf that was just reached,
+    /// and the old value associated with key
+    ///
+    /// Handles binary tree search and AVL rebalancing
+    ///
+    /// Deletions are not handled here in order not to complicate the code even more -- in case of deletion,
+    /// we don't change the tree, but simply return toDelete = true.
+    /// We then go in and delete using deleteHelper
+    ///
     fn modify_helper(
         &mut self,
         r_node: &NodeId,
@@ -274,112 +274,112 @@ pub trait AuthenticatedTreeOps {
         // because if the operation failed, there is no need to put nodes in the proof.
         let res = match self.tree().copy(r_node) {
 			Node::Leaf(r) => {
-				if self.key_matches_leaf(key, &r) {
-						match operation {
-							Operation::Lookup(_) => {
-								self.on_node_visit(r_node, operation, false);
-								(r_node.clone(), false, false, false, Some(r.value))
-							}
-							_ => { // modification
-								match operation.update_fn(Some(r.value.clone()))? {
-									None =>  { // delete key
-										self.on_node_visit(r_node, operation, false);
-										(r_node.clone(), false, false, true, Some(r.value))
-									}
-									Some(v) => { // update value
-										assert!(v.len() == self.tree().value_length.unwrap());
-										let old_value = Some(r.value);
-										let r_new = LeafNode::update(r_node, &r.hdr.key.unwrap(), &v, &r.next_node_key);
-										self.on_node_visit(r_node, operation, false);
-										(r_new, true, false, false, old_value)
-									}
-								}
-							} // do nothing
-						}
-					} else {
-						// x > r.key
-						match operation {
-							Operation::Lookup(_) => {
-								self.on_node_visit(r_node, operation, false);
-								(r_node.clone(), false, false, false, None)
-							}
-							_ => {
-								match operation.update_fn(None)? {
-									None => { // don't change anything, just lookup
-										self.on_node_visit(r_node, operation, false);
-										(r_node.clone(), false, false, false, None)
-									}
-									Some(v) => { // insert new value
-										ensure!(v.len() == self.tree().value_length.unwrap());
-										self.on_node_visit(r_node, operation, false);
-										(self.add_node(r_node, &key, &v), true, true, false, None)
-									}
-								}
-							}
-						}
-					}
-				}
-				Node::Internal(r) => {
-					// Go recursively in the correct direction
-					// Get a new node
-					// See if a single or double rotation is needed for AVL tree balancing
-					if self.next_direction_is_left(key, &r) {
-						let (new_leftm, change_happened, child_height_increased, to_delete, old_value) = self.modify_helper(&r.left, key, operation)?;
-						self.on_node_visit(r_node, operation, false);
+                if self.key_matches_leaf(key, &r) {
+                    match operation {
+                        Operation::Lookup(_) => {
+                            self.on_node_visit(r_node, operation, false);
+                            (r_node.clone(), false, false, false, Some(r.value))
+                        }
+                        _ => { // on modification
+                            match operation.update_fn(Some(r.value.clone()))? {
+                                None =>  { // delete key
+                                    self.on_node_visit(r_node, operation, false);
+                                    (r_node.clone(), false, false, true, Some(r.value))
+                                }
+                                Some(v) => { // update value
+                                    assert!(self.tree().value_length.filter(|len|v.len() != *len).is_none());
+                                    let old_value = Some(r.value);
+                                    let r_new = LeafNode::update(r_node, &r.hdr.key.unwrap(), &v, &r.next_node_key);
+                                    self.on_node_visit(r_node, operation, false);
+                                    (r_new, true, false, false, old_value)
+                                }
+                            }
+                        } // do nothing
+                    }
+                } else {
+                    // x > r.key
+                    match operation {
+                        Operation::Lookup(_) => {
+                            self.on_node_visit(r_node, operation, false);
+                            (r_node.clone(), false, false, false, None)
+                        }
+                        _ => { // on modification
+                            match operation.update_fn(None)? {
+                                None => { // don't change anything, just lookup
+                                    self.on_node_visit(r_node, operation, false);
+                                    (r_node.clone(), false, false, false, None)
+                                }
+                                Some(v) => { // insert new value
+                                    assert!(self.tree().value_length.filter(|len|v.len() != *len).is_none());
+                                    self.on_node_visit(r_node, operation, false);
+                                    (self.add_node(r_node, &key, &v), true, true, false, None)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Node::Internal(r) => {
+                // Go recursively in the correct direction
+                // Get a new node
+                // See if a single or double rotation is needed for AVL tree balancing
+                if self.next_direction_is_left(key, &r) {
+                    let (new_leftm, change_happened, child_height_increased, to_delete, old_value) = self.modify_helper(&r.left, key, operation)?;
+                    self.on_node_visit(r_node, operation, false);
 
-						// balance = -1 if left higher, +1 if left lower
-						if change_happened {
-							if child_height_increased && r.balance < 0 {
-								// need to rotate
-								// at this point we know newLeftM must be an internal node and not a leaf -- because height increased
-								if self.tree().balance(&new_leftm) < 0 {
-									// single right rotate
-									let new_r = InternalNode::update(r_node, &self.tree().right(&new_leftm), &r.right, 0);
-									(InternalNode::update(&new_leftm, &self.tree().left(&new_leftm), &new_r, 0), true, false, false, old_value)
-								} else {
-									(self.double_right_rotate(r_node, &new_leftm, &r.right), true, false, false, old_value)
-								}
-							} else {
-								// no need to rotate
-								let my_height_increased = child_height_increased && r.balance == 0;
-								let r_balance = if child_height_increased { r.balance - 1 } else { r.balance };
-								(InternalNode::update(r_node, &new_leftm, &r.right, r_balance), true, my_height_increased, false, old_value)
-							}
-						} else {
-							// no change happened
-							(r_node.clone(), false, false, to_delete, old_value)
-						}
-					} else {
-						let (new_rightm, change_happened, child_height_increased, to_delete, old_value) = self.modify_helper(&r.right, key, operation)?;
-						self.on_node_visit(r_node, operation, false);
+                    // balance = -1 if left higher, +1 if left lower
+                    if change_happened {
+                        if child_height_increased && r.balance < 0 {
+                            // need to rotate
+                            // at this point we know newLeftM must be an internal node and not a leaf -- because height increased
+                            if self.tree().balance(&new_leftm) < 0 {
+                                // single right rotate
+                                let new_r = InternalNode::update(r_node, &self.tree().right(&new_leftm), &r.right, 0);
+                                (InternalNode::update(&new_leftm, &self.tree().left(&new_leftm), &new_r, 0), true, false, false, old_value)
+                            } else {
+                                (self.double_right_rotate(r_node, &new_leftm, &r.right), true, false, false, old_value)
+                            }
+                        } else {
+                            // no need to rotate
+                            let my_height_increased = child_height_increased && r.balance == 0;
+                            let r_balance = if child_height_increased { r.balance - 1 } else { r.balance };
+                            (InternalNode::update(r_node, &new_leftm, &r.right, r_balance), true, my_height_increased, false, old_value)
+                        }
+                    } else {
+                        // no change happened
+                        (r_node.clone(), false, false, to_delete, old_value)
+                    }
+                } else {
+                    let (new_rightm, change_happened, child_height_increased, to_delete, old_value) = self.modify_helper(&r.right, key, operation)?;
+                    self.on_node_visit(r_node, operation, false);
 
-						// balance = -1 if left higher, +1 if left lower
-						if change_happened {
-							if child_height_increased && r.balance > 0 {
-								// need to rotate
-								// at this point we know newRightM must be an internal node and not a leaf -- because height increased
-								if self.tree().balance(&new_rightm) > 0 {
-									// single left rotate
-									let new_r = InternalNode::update(r_node, &r.left, &self.tree().left(&new_rightm), 0);
-									(InternalNode::update(&new_rightm, &new_r, &self.tree().right(&new_rightm), 0), true, false, false, old_value)
-								} else {
-									(self.double_left_rotate(r_node, &r.left, &new_rightm), true, false, false, old_value)
-								}
-							} else {
-								// no need to rotate
-								let my_height_increased = child_height_increased && r.balance == 0;
-								let r_balance = if child_height_increased { r.balance + 1 } else { r.balance };
-								(InternalNode::update(r_node, &r.left, &new_rightm, r_balance), true, my_height_increased, false, old_value)
-							}
-						} else {
-							// no change happened
-							(r_node.clone(), false, false, to_delete, old_value)
-						}
-					}
-				}
-			_ =>
-				panic!("Should never reach this point. If in prover, this is a bug. If in verifier, this proof is wrong.")
-		};
+                    // balance = -1 if left higher, +1 if left lower
+                    if change_happened {
+                        if child_height_increased && r.balance > 0 {
+                            // need to rotate
+                            // at this point we know newRightM must be an internal node and not a leaf -- because height increased
+                            if self.tree().balance(&new_rightm) > 0 {
+                                // single left rotate
+                                let new_r = InternalNode::update(r_node, &r.left, &self.tree().left(&new_rightm), 0);
+                                (InternalNode::update(&new_rightm, &new_r, &self.tree().right(&new_rightm), 0), true, false, false, old_value)
+                            } else {
+                                (self.double_left_rotate(r_node, &r.left, &new_rightm), true, false, false, old_value)
+                            }
+                        } else {
+                            // no need to rotate
+                            let my_height_increased = child_height_increased && r.balance == 0;
+                            let r_balance = if child_height_increased { r.balance + 1 } else { r.balance };
+                            (InternalNode::update(r_node, &r.left, &new_rightm, r_balance), true, my_height_increased, false, old_value)
+                        }
+                    } else {
+                        // no change happened
+                        (r_node.clone(), false, false, to_delete, old_value)
+                    }
+                }
+            }
+            _ =>
+                panic!("Should never reach this point. If in prover, this is a bug. If in verifier, this proof is wrong.")
+        };
         Ok(res)
     }
 
@@ -404,13 +404,13 @@ pub trait AuthenticatedTreeOps {
     ) -> NodeId {
         self.on_node_visit(r_node, operation, false);
         match self.tree().copy(r_node) {
-					Node::Leaf(node) =>
-						LeafNode::update(r_node, next_leaf_key, &node.value, &node.next_node_key),
-					Node::Internal(node) =>
-						InternalNode::update(r_node, &node.left, &self.change_next_leaf_key_of_max_node(&node.right, next_leaf_key, operation), node.balance),
-					_ =>
-						panic!("Should never reach this point. If in prover, this is a bug. In in verifier, this proof is wrong.")
-				}
+            Node::Leaf(node) =>
+                LeafNode::update(r_node, &node.hdr.key.unwrap(), &node.value, &next_leaf_key),
+            Node::Internal(node) =>
+                InternalNode::update(r_node, &node.left, &self.change_next_leaf_key_of_max_node(&node.right, next_leaf_key, operation), node.balance),
+            _ =>
+                panic!("Should never reach this point. If in prover, this is a bug. In in verifier, this proof is wrong.")
+        }
     }
 
     fn change_key_and_value_of_min_node(
@@ -422,26 +422,26 @@ pub trait AuthenticatedTreeOps {
     ) -> NodeId {
         self.on_node_visit(r_node, operation, false);
         match self.tree().copy(r_node) {
-					Node::Leaf(node) =>
-						LeafNode::update(r_node, new_key, &node.value, &node.next_node_key),
-					Node::Internal(node) =>
-						InternalNode::update(r_node, &self.change_key_and_value_of_min_node(&node.left, new_key, new_value, operation), &node.right, node.balance),
-					_ =>
-						panic!("Should never reach this point. If in prover, this is a bug. In in verifier, this proof is wrong.")
-				}
+            Node::Leaf(node) =>
+                LeafNode::update(r_node, new_key, new_value, &node.next_node_key),
+            Node::Internal(node) =>
+                InternalNode::update(r_node, &self.change_key_and_value_of_min_node(&node.left, new_key, new_value, operation), &node.right, node.balance),
+            _ =>
+                panic!("Should never reach this point. If in prover, this is a bug. In in verifier, this proof is wrong.")
+        }
     }
 
-    /** Deletes the node in the subtree rooted at r and its corresponding leaf
-     * as indicated by replayComparison or deleteMax. Performs AVL balancing.
-     *
-     * If deleteMax == false: deletes the first node for which replayComparison returns 0
-     * and the leaf that is the leftmost descendant of this node's child
-     *
-     * If deleteMax == true: deletes the right leaf and its parent, replacing the parent
-     * with the parent's left child
-     *
-     * Returns the new root and an indicator whether the tree height decreased
-     */
+    /// Deletes the node in the subtree rooted at r and its corresponding leaf
+    /// as indicated by replayComparison or deleteMax. Performs AVL balancing.
+    ///
+    /// If deleteMax == false: deletes the first node for which replayComparison returns 0
+    /// and the leaf that is the leftmost descendant of this node's child
+    ///
+    /// If deleteMax == true: deletes the right leaf and its parent, replacing the parent
+    /// with the parent's left child
+    ///
+    /// Returns the new root and an indicator whether the tree height decreased
+    ///
     fn delete_helper(
         &mut self,
         r_node: &NodeId,
@@ -524,7 +524,7 @@ pub trait AuthenticatedTreeOps {
                     let left = self.tree().left(&r_with_changed_key);
                     let right = self.tree().right(&r_with_changed_key);
                     let key = self.tree().key(&s);
-                    let value = &self.tree().value(&s);
+                    let value = self.tree().value(&s);
                     InternalNode::update(
                         &r_with_changed_key,
                         &left,
@@ -560,9 +560,9 @@ pub trait AuthenticatedTreeOps {
                             );
                             let new_rbalance = right_child.balance - 1;
                             let new_r = InternalNode::update(
-                                &new_root,
-                                &new_left_child,
                                 &root_right,
+                                &new_left_child,
+                                &right_child.right,
                                 new_rbalance,
                             );
                             (new_r, new_rbalance == 0)
