@@ -429,13 +429,13 @@ impl AuthenticatedTreeOps for BatchAVLProver {
     /// @param r
     /// @return
     ////
-    fn key_matches_leaf(&mut self, _key: &ADKey, _leaf: &LeafNode) -> bool {
+    fn key_matches_leaf(&mut self, _key: &ADKey, _leaf: &LeafNode) -> Result<bool> {
         // The prover doesn't actually need to look at the leaf key,
         // because the prover would have already seen this key on the way
         // down the to leaf if and only if the leaf matches the key that is being sought
         let ret = self.found;
         self.found = false; // reset for next time
-        ret
+        Ok(ret)
     }
 
     ///

@@ -854,10 +854,9 @@ fn test_proof_generation() {
             .map(|kv| Operation::Insert(kv.clone()))
             .collect();
         let to_remove: Vec<Operation> = (0..insert_num)
-            .map(|i| {
+            .flat_map(|i| {
                 prover
                     .random_walk(&mut StdRng::seed_from_u64(i as u64))
-                    .unwrap()
             })
             .map(|kv| Operation::Remove(kv.key))
             .collect();
@@ -1106,7 +1105,8 @@ fn test_tree_varlen_key() {
     let mut prover = generate_prover(KEY_LENGTH, None);
     let mut digest = prover.digest().unwrap();
 
-    for value_length in 0..0x8000 {
+    for _ in 0..TEST_ITERATIONS {
+		let value_length = rand::thread_rng().gen_range(0..0x8000);
         let key = random_key();
         let value = Bytes::from(vec![0u8; value_length]);
         let current_mods = [Operation::Insert(KeyValue { key, value })];
@@ -1356,81 +1356,74 @@ fn test_verifier_fails() {
             assert!(p
                 .perform_one_operation(&Operation::Insert(random_kv()))
                 .is_ok()); // failed to insert
+		}
+        let mut v = generate_verifier(
+            &digest,
+            &p.generate_proof(),
+            KEY_LENGTH,
+            Some(VALUE_LENGTH),
+            Some(8),
+            Some(0),
+        );
+        assert!(v.digest().is_some()); // verification failed to construct tree
+        // Try 5 inserts that do not match -- with overwhelming probability one of them will go to a leaf
+        // that is not in the conveyed tree, and verifier will complain
+        for _ in 0..5 {
+            let key = random_key();
+            assert!(v.perform_one_operation(&Operation::Insert(KeyValue {
+                key: key.clone(),
+                value: random_value()
+            })).is_err());
+		}
+        assert!(v.digest().is_none()); // verification succeeded when it should have failed, because of a missing leaf
 
-            let mut v = generate_verifier(
-                &digest,
-                &p.generate_proof(),
-                KEY_LENGTH,
-                Some(VALUE_LENGTH),
-                Some(8),
-                Some(0),
-            );
-            assert!(v.digest().is_some()); // verification failed to construct tree
-                                           // Try 5 inserts that do not match -- with overwhelming probability one of them will go to a leaf
-                                           // that is not in the conveyed tree, and verifier will complain
-            for _ in 0..5 {
-                let key = random_key();
-                assert!(v
-                    .perform_one_operation(&Operation::Insert(KeyValue {
-                        key: key.clone(),
-                        value: random_value()
-                    }))
-                    .is_ok());
-                assert!(v.digest().unwrap().is_empty()); // verification succeeded when it should have failed, because of a missing leaf
+        digest = p.digest().unwrap();
+		let kv = random_kv();
+		let key = kv.key.clone();
+        assert!(p.perform_one_operation(&Operation::Insert(kv)).is_ok());
+        pf = p.generate_proof();
+        p.check_tree(false);
 
-                digest = p.digest().unwrap();
-                assert!(p
-                    .perform_one_operation(&Operation::Insert(random_kv()))
-                    .is_ok());
-                pf = p.generate_proof();
-                p.check_tree(false);
+        // Change the direction of the proof and make sure verifier fails
+        let mut vpf = pf.to_vec();
+        *vpf.last_mut().unwrap() = !vpf.last().unwrap();
+        v = generate_verifier(
+            &digest,
+            &Bytes::copy_from_slice(&vpf),
+            KEY_LENGTH,
+            Some(VALUE_LENGTH),
+            Some(1),
+            Some(0),
+        );
+        assert!(v.digest().is_some()); // verification failed to construct tree
+        assert!(v.perform_one_operation(&Operation::Insert(KeyValue {
+            key: key.clone(),
+            value: random_value()
+        })).is_err());
+        assert!(v.digest().is_none()); // verification succeeded when it should have failed, because of the wrong direction
 
-                // Change the direction of the proof and make sure verifier fails
-                let mut vpf = pf.to_vec();
-                *vpf.last_mut().unwrap() = !vpf.last().unwrap();
-                v = generate_verifier(
-                    &digest,
-                    &Bytes::copy_from_slice(&vpf),
-                    KEY_LENGTH,
-                    Some(VALUE_LENGTH),
-                    Some(1),
-                    Some(0),
-                );
-                assert!(v.digest().is_some()); // verification failed to construct tree
-                assert!(v
-                    .perform_one_operation(&Operation::Insert(KeyValue {
-                        key: key.clone(),
-                        value: random_value()
-                    }))
-                    .is_ok());
-                assert!(v.digest().is_some()); // verification succeeded when it should have failed, because of the wrong direction
-
-                // Change the key by a large amount -- verification should fail with overwhelming probability
-                // because there are 1000 keys in the tree
-                // First, change the proof back to be correct
-                *vpf.last_mut().unwrap() = !vpf.last().unwrap();
-                let mut vk = key.to_vec();
-                vk[0] ^= 1u8 << 7;
-                let key = Bytes::copy_from_slice(&vk);
-                v = generate_verifier(
-                    &digest,
-                    &Bytes::copy_from_slice(&vpf),
-                    KEY_LENGTH,
-                    Some(VALUE_LENGTH),
-                    Some(1),
-                    Some(0),
-                );
-                assert!(v.digest().is_some()); // verification failed to construct tree
-                assert!(v
-                    .perform_one_operation(&Operation::Insert(KeyValue {
-                        key,
-                        value: random_value()
-                    }))
-                    .is_ok());
-                assert!(v.digest().unwrap().is_empty()); // verification succeeded when it should have failed because of the wrong key
+        // Change the key by a large amount -- verification should fail with overwhelming probability
+        // because there are 1000 keys in the tree
+        // First, change the proof back to be correct
+        *vpf.last_mut().unwrap() = !vpf.last().unwrap();
+        let mut vk = key.to_vec();
+        vk[0] ^= 1u8 << 7;
+        let key = Bytes::copy_from_slice(&vk);
+        v = generate_verifier(
+            &digest,
+            &Bytes::copy_from_slice(&vpf),
+            KEY_LENGTH,
+            Some(VALUE_LENGTH),
+            Some(1),
+            Some(0),
+        );
+        assert!(v.digest().is_some()); // verification failed to construct tree
+        assert!(v.perform_one_operation(&Operation::Insert(KeyValue {
+            key,
+            value: random_value()
+        })).is_err());
+        assert!(v.digest().is_none()); // verification succeeded when it should have failed because of the wrong key
                                                          // put the key back the way it should be, because otherwise it's messed up in the prover tree
-            }
-        }
     }
 }
 

@@ -2,7 +2,7 @@ use crate::batch_node::*;
 use crate::operation::*;
 use bytes::{BufMut, BytesMut};
 
-use anyhow::{ensure, Result};
+use anyhow::*;
 
 type ChangeHappened = bool;
 type HeightIncreased = bool;
@@ -60,7 +60,7 @@ pub trait AuthenticatedTreeOps {
     ///
     /// @return - whether we found the correct leaf and the key contains it
     ///
-    fn key_matches_leaf(&mut self, key: &ADKey, leaf: &LeafNode) -> bool;
+    fn key_matches_leaf(&mut self, key: &ADKey, leaf: &LeafNode) -> Result<bool>;
 
     ///
     /// @return - whether to go left or right when searching for key and standing at r
@@ -274,7 +274,7 @@ pub trait AuthenticatedTreeOps {
         // because if the operation failed, there is no need to put nodes in the proof.
         let res = match self.tree().copy(r_node) {
 			Node::Leaf(r) => {
-                if self.key_matches_leaf(key, &r) {
+                if self.key_matches_leaf(key, &r)? {
                     match operation {
                         Operation::Lookup(_) => {
                             self.on_node_visit(r_node, operation, false);
@@ -378,7 +378,7 @@ pub trait AuthenticatedTreeOps {
                 }
             }
             _ =>
-                panic!("Should never reach this point. If in prover, this is a bug. If in verifier, this proof is wrong.")
+                bail!("Should never reach this point. If in prover, this is a bug. If in verifier, this proof is wrong.")
         };
         Ok(res)
     }

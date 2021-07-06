@@ -1,7 +1,7 @@
 use crate::authenticated_tree_ops::*;
 use crate::batch_node::*;
 use crate::operation::*;
-use anyhow::{ensure, Result};
+use anyhow::*;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 
@@ -155,7 +155,13 @@ impl BatchAVLVerifier {
     ///
     pub fn perform_one_operation(&mut self, operation: &Operation) -> Result<Option<ADValue>> {
         self.replay_index = self.directions_index;
-        self.return_result_of_one_operation(operation, &self.top_node())
+		let root = self.base.tree.root.as_ref().ok_or(anyhow!("Empty tree"))?.clone();
+		let res = self.return_result_of_one_operation(operation, &root);
+		if res.is_err() {
+			self.base.tree.root = None;
+			self.base.tree.height = 0;
+		}
+		res
     }
 }
 
@@ -197,7 +203,7 @@ impl AuthenticatedTreeOps for BatchAVLVerifier {
     /// @param r_node
     /// @return
     ///
-    fn key_matches_leaf(&mut self, key: &ADKey, leaf: &LeafNode) -> bool {
+    fn key_matches_leaf(&mut self, key: &ADKey, leaf: &LeafNode) -> Result<bool> {
         // keyMatchesLeaf for the verifier is different than for the prover:
         // since the verifier doesn't have keys in internal nodes, keyMatchesLeaf
         // checks that the key is either equal to the leaf's key
@@ -205,11 +211,11 @@ impl AuthenticatedTreeOps for BatchAVLVerifier {
         // See https://eprint.iacr.org/2016/994 Appendix B paragraph "Our Algorithms"
 		let leaf_key = leaf.hdr.key.as_ref().unwrap();
         if *key == *leaf_key {
-            true
+            Ok(true)
         } else {
-            assert!(*key > *leaf_key);
-            assert!(*key < leaf.next_node_key);
-            false
+            ensure!(*key > *leaf_key);
+            ensure!(*key < leaf.next_node_key);
+            Ok(false)
         }
     }
 
