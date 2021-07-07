@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::time::Instant;
 use scorex_crypto_avltree::authenticated_tree_ops::*;
 use scorex_crypto_avltree::batch_node::*;
 use scorex_crypto_avltree::operation::*;
@@ -1670,4 +1671,39 @@ fn test_verifier_calculate_same_digest() {
         assert_eq!(digest, prover.digest().unwrap());
     }
     prover.check_tree(true);
+}
+
+#[test]
+fn remove_nodes_benchmark() {
+    let start_tree_size:usize = 100000;
+    let iterations:usize = 100;
+    let to_remove_size:usize = 1000;
+    let to_insert_size:usize = 1000;
+	let (mut prover, elements) = generate_and_populate_prover(start_tree_size);
+	let now = Instant::now();
+
+	for i in 0..iterations {
+		let mut to_remove: Vec<Operation> = elements[i*to_remove_size..(i+1)*to_remove_size]
+			.iter()
+			.map(|kv| Operation::Remove(kv.key.clone()))
+			.collect();
+		let to_insert: Vec<Operation> = (0..to_insert_size).map(|j| {
+			let k = sha256(&format!("{}-{}", i, j));
+			Operation::Insert(KeyValue{key:k.clone(), value:Bytes::copy_from_slice(&k[..8])})
+		}).collect();
+
+        let mut mods = to_insert;
+        mods.append(&mut to_remove);
+
+		let non_modifying_proof = prover.generate_proof_for_operations(&mods).unwrap().0;
+		mods.iter()
+			.for_each(|op| assert!(prover.perform_one_operation(op).is_ok()));
+
+		let removed_nodes = prover.removed_nodes();
+		let _removed_nodes_length = removed_nodes.len();
+
+		let proof_bytes = prover.generate_proof();
+		assert_eq!(non_modifying_proof, proof_bytes);
+    }
+	println!("Elapsed time: {:?}", now.elapsed());
 }

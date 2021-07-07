@@ -57,9 +57,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10a5720225ef5daecf08657f23791354e1685a8c91a4c60c7f3d3b2892f978f4"
 dependencies = [
  "crypto-mac",
- "digest",
+ "digest 0.9.0",
  "opaque-debug",
 ]
+
+[[package]]
+name = "byte-tools"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0919189ba800c7ffe8778278116b7e0de3905ab81c72abb69c85cbfef7991279"
 
 [[package]]
 name = "byteorder"
@@ -91,7 +97,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b584a330336237c1eecd3e94266efb216c56ed91225d634cb2991c5f3fd1aeab"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.4",
  "subtle",
 ]
 
@@ -106,11 +112,46 @@ dependencies = [
 
 [[package]]
 name = "digest"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41a0f307b67d9f0e57edc00804d3146f9f889fe8b2422825566c8e8dd2b5733c"
+dependencies = [
+ "generic-array 0.6.0",
+]
+
+[[package]]
+name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3dd60d1080a57a05ab032377049e0591415d2b31afd7028356dbf3cc6dcb066"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.4",
+]
+
+[[package]]
+name = "digest-buffer"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79472b4b47364a1f1c23122d5b5e481b4657714c61617ea91daf6f57549b5f00"
+dependencies = [
+ "byte-tools",
+ "generic-array 0.6.0",
+]
+
+[[package]]
+name = "fake-simd"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
+
+[[package]]
+name = "generic-array"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7229d82657e79be00d5f2a110a973ab5340681b945cf1bc022be7cfebf2dc00c"
+dependencies = [
+ "nodrop",
+ "typenum",
 ]
 
 [[package]]
@@ -161,6 +202,12 @@ dependencies = [
  "adler",
  "autocfg",
 ]
+
+[[package]]
+name = "nodrop"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 
 [[package]]
 name = "object"
@@ -240,6 +287,20 @@ dependencies = [
  "bytes",
  "debug-cell",
  "rand",
+ "sha2",
+]
+
+[[package]]
+name = "sha2"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25405172e8d8325cbbb72af68adc28931dacd1482d067facc46ac808f48df55c"
+dependencies = [
+ "byte-tools",
+ "digest 0.4.0",
+ "digest-buffer",
+ "fake-simd",
+ "generic-array 0.6.0",
 ]
 
 [[package]]

@@ -1,6 +1,7 @@
 use anyhow::*;
 use blake2::digest::{Update, VariableOutput};
 use blake2::VarBlake2b;
+use sha2::{Sha256,Digest};
 use bytes::Bytes;
 use rand::prelude::*;
 use scorex_crypto_avltree::authenticated_tree_ops::*;
@@ -215,4 +216,10 @@ impl Iterator for RollbackVersionIterator {
         self.version = None;
         cur
     }
+}
+
+pub fn sha256(data: &str) -> Bytes {
+    let mut hasher = Sha256::new();
+    hasher.input(data.as_bytes());
+	Bytes::copy_from_slice(&hasher.result())
 }
