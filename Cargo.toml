@@ -3,6 +3,11 @@ name = "scorex_crypto_avltree"
 version = "0.1.0"
 authors = ["Konstantin Knizhnik <knizhnik@garret.ru>"]
 edition = "2018"
+license = "Public Domain CC0"
+description = "Implementation of cryptographically authenticated dictionary based on AVL tree"
+documentation = "crypto_avltree.md"
+repository = "https://github.com:knizhnik/scorex_crypto_avltree.git"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
