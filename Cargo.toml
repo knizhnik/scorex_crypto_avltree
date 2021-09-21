@@ -6,7 +6,7 @@ edition = "2018"
 license = "Public Domain CC0"
 description = "Implementation of cryptographically authenticated dictionary based on AVL tree"
 documentation = "https://eprint.iacr.org/2016/994"
-repository = "https://github.com:knizhnik/scorex_crypto_avltree.git"
+repository = "https://github.com/knizhnik/scorex_crypto_avltree.git"
 readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
