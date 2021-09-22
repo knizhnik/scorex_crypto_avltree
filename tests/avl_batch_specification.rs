@@ -7,6 +7,9 @@ use scorex_crypto_avltree::batch_node::*;
 use scorex_crypto_avltree::operation::*;
 use scorex_crypto_avltree::batch_avl_verifier::BatchAVLVerifier;
 use scorex_crypto_avltree::persistent_batch_avl_prover::*;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 
 mod common;
 use common::*;
@@ -489,8 +492,14 @@ fn test_removed_nodes_special_cases() {
     for m in &in_list {
         prover.perform_one_operation(m).unwrap();
     }
-    prover.generate_proof();
-
+	{
+		let rust_proof = prover.generate_proof();
+		let path = Path::new("tests/scala_proves/proof1.dmp");
+		let mut file = File::open(&path).unwrap();
+		let mut scala_proof = Vec::new();
+        file.read_to_end(&mut scala_proof).unwrap();
+		assert_eq!(rust_proof, &*scala_proof);
+	}
     let mods = [
         rem_op(b"5cb7a321448962d35dfbc168ffc5e372c07879592027571b6d4e6f15f257c871"),
         rem_op(b"628181857476ed88dcbf0d77c460b8626cd968a9bdf43c1d2ea67f2acd3694d3"),
@@ -723,7 +732,14 @@ fn test_removed_nodes_special_cases() {
     }
 
     let to_remove_nodes = prover.removed_nodes();
-    prover.generate_proof();
+	{
+		let rust_proof = prover.generate_proof();
+		let path = Path::new("tests/scala_proves/proof2.dmp");
+		let mut file = File::open(&path).unwrap();
+		let mut scala_proof = Vec::new();
+        file.read_to_end(&mut scala_proof).unwrap();
+		assert_eq!(rust_proof, &*scala_proof);
+	}
     for rn in &to_remove_nodes {
         assert!(!prover.contains(rn));
     }
@@ -1174,7 +1190,7 @@ fn test_modifications() {
                 }
             }
             let non_existing_lookup = Operation::Lookup(unexisted_key);
-            assert!(prover.perform_one_operation(&non_existing_lookup).is_ok());
+            let _ = prover.perform_one_operation(&non_existing_lookup);
             let pr2 = prover.generate_proof();
             let mut vr2 = generate_verifier(
                 &prover.digest().unwrap(),
@@ -1503,7 +1519,7 @@ fn test_successful_modifications() {
         while i < j {
             if keys_and_vals.is_empty() || rnd.gen_range(0..2) == 0 {
                 // with prob .5 insert a new one, with prob .5 update or delete an existing one
-                if keys_and_vals.is_empty() && rnd.gen_range(0..10) == 0 {
+                if !keys_and_vals.is_empty() && rnd.gen_range(0..10) == 0 {
                     // with probability 1/10 cause a fail by inserting already existing
                     let index = rnd.gen_range(0..keys_and_vals.len());
                     let key = keys_and_vals[index].key.clone();

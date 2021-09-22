@@ -11,6 +11,7 @@ use scorex_crypto_avltree::batch_node::*;
 use scorex_crypto_avltree::operation::*;
 use scorex_crypto_avltree::versioned_avl_storage::*;
 use std::collections::HashMap;
+use std::io::Write;
 
 pub const INITIAL_TREE_SIZE: usize = 1000;
 pub const KEY_LENGTH: usize = 32;
@@ -220,6 +221,6 @@ impl Iterator for RollbackVersionIterator {
 
 pub fn sha256(data: &str) -> Bytes {
     let mut hasher = Sha256::new();
-    hasher.input(data.as_bytes());
-	Bytes::copy_from_slice(&hasher.result())
+    hasher.write(data.as_bytes()).unwrap();
+	Bytes::copy_from_slice(&hasher.finalize())
 }
