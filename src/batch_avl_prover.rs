@@ -59,7 +59,6 @@ impl BatchAVLProver {
                 &prover.base.tree.positive_infinity_key(),
             );
             prover.base.tree.root = Some(t);
-            prover.base.tree.height = 1;
             prover.base.tree.reset();
         }
         prover.old_top_node = prover.base.tree.root.clone();
@@ -338,7 +337,7 @@ impl BatchAVLProver {
                 let height = std::cmp::max(left_height, right_height) + 1;
                 (min_left, max_right, height)
             }
-            _ => (r_node.clone(), r_node.clone(), 1),
+            _ => (r_node.clone(), r_node.clone(), 0),
         }
     }
 
@@ -458,5 +457,28 @@ impl AuthenticatedTreeOps for BatchAVLProver {
         };
         self.replay_index += 1;
         ret
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_hash_is_correct() {
+        let prover = BatchAVLProver::new(
+            AVLTree::new(
+                |digest| Node::LabelOnly(NodeHeader::new(Some(*digest), None)),
+                32,
+                None,
+            ),
+            true,
+        );
+        let digest = base16::encode_lower(&prover.digest().unwrap());
+
+        assert_eq!(
+            digest,
+            "4ec61f485b98eb87153f7c57db4f5ecd75556fddbc403b41acf8441fde8e160900"
+        )
     }
 }
